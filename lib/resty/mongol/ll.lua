@@ -34,6 +34,10 @@ local num_to_le_uint = function ( n , bytes )
 	return strchar ( unpack ( b ) )
 end
 local num_to_le_int = function ( n , bytes )
+	bytes = bytes or 4
+	if n < 0 then -- Converted to unsigned.
+		n = 2^(8*bytes) + n
+	end
 	return num_to_le_uint ( n , bytes )
 end
 
@@ -52,7 +56,9 @@ local num_to_be_uint = function ( n , bytes )
 	for i=bytes , 1 , -1 do
 		b [ i ] , n = n % 2^8 , floor ( n / 2^8 )
 	end
-	assert ( n == 0 )
+	if n ~= 0  then
+		return
+	end
 	return strchar ( unpack ( b ) )
 end
 

@@ -18,6 +18,10 @@ function dbmethods:cmd(q)
     
     local c_id , r , t = col:query(q)
 
+    if not t or not r then
+        return nil, "query abnormal"
+    end
+
     if t.QueryFailure then
         return nil, "Query Failure"
     elseif not r[1] then
@@ -101,6 +105,7 @@ function dbmethods:auth_scram_sha1(username, password)
     local nonce = ngx.encode_base64(string.sub(tostring(math.random()), 3 , 14))
     local first_bare = "n="  .. user .. ",r="  .. nonce
     local sasl_start_payload = ngx.encode_base64("n,," .. first_bare)
+    local r, err
     
     r, err = self:cmd(attachpairs_start({
             saslStart = 1 ;

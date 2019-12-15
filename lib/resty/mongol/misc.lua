@@ -43,8 +43,15 @@ local pairs_start = function ( t , sk )
             return sk, t[sk]
         elseif i == 2 then
             nk, nv = next(t)
+            -- fixbug: Mongodb3.4(or >=3.4), BSON field 'OperationSessionInfo.xxx' is a duplicate field
+            if sk == nk then
+                nk,nv = next(t,nk)
+            end
         else
             nk, nv = next(t, k)
+            if sk == nk then
+                nk,nv = next(t,nk)
+            end
         end
         return nk,nv
     end , t

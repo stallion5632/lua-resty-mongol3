@@ -64,21 +64,30 @@ function cursor_methods:next()
 
     local t
     if not self.id then
-        self.id, self.results, t = self.col:query(self.query, 
-                        self.returnfields, self.i, self.num_each)
-        if self.id == "\0\0\0\0\0\0\0\0" then
+        self.id, self.results, t = self.col:query(self.query, self.returnfields, self.i, self.num_each)
+        if not self.results then
+            ngx.log(ngx.ERR, 'the mongodb cursor result is nil!')
+            return nil
+        end
+
+        if self.id and self.id == "\0\0\0\0\0\0\0\0" then
             self.done = true
         end
     else
-        self.id, self.results, t = self.col:getmore(self.id, 
-                        self.num_each, self.i)
+        self.id, self.results, t = self.col:getmore(self.id, self.num_each, self.i)
+        if not self.results then
+            ngx.log(ngx.ERR, 'the mongodb cursor result is nil!')
+            return nil
+        end
+        
         self.skip_n = self.i
-        if self.id == "\0\0\0\0\0\0\0\0" then
+        if self.id and self.id == "\0\0\0\0\0\0\0\0" then
             self.done = true
-        elseif t.CursorNotFound then
+        elseif t and t.CursorNotFound then
             self.id = false
         end
     end
+    
     return self:next()
 end
 

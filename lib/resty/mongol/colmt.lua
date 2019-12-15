@@ -53,11 +53,15 @@ local function docmd ( conn , opcode , message ,  reponseTo )
     local req_id = id
     local requestID = num_to_le_uint ( req_id )
     reponseTo = reponseTo or "\255\255\255\255"
-    opcode = num_to_le_uint ( assert ( opcodes [ opcode ] ) )
+    if not opcodes [ opcode ] then
+        return nil
+    end
+    opcode = num_to_le_uint ( opcodes [ opcode ]  )
 
     local m = compose_msg ( requestID , reponseTo , opcode , message )
-    local sent = assert ( conn.sock:send ( m ) )
-    return req_id , sent
+    local sent, err = conn.sock:send ( m ) 
+
+    return req_id , sent, err 
 end
 
 local function read_msg_header ( sock )
@@ -116,6 +120,10 @@ function colmethods:insert(docs, continue_on_error, safe)
     local m = num_to_le_uint(flags)..full_collection_name(self, self.col)
                 ..t_concat(t)
     local id, send = docmd(self.conn, "INSERT", m)
+    if not send then
+        return nil, "socket error"
+    end
+        
     if send == 0 then
         return nil, "send message failed"   
     end
@@ -147,6 +155,10 @@ function colmethods:update(selector, update, upsert, multiupdate, safe)
     local m = "\0\0\0\0" .. full_collection_name(self, self.col) 
                 .. num_to_le_uint ( flags ) .. selector .. update
     local id, send = docmd(self.conn, "UPDATE", m)
+    if not send then
+        return nil, "socket error"
+    end
+
     if send == 0 then
         return nil, "send message failed"   
     end
@@ -175,8 +187,12 @@ function colmethods:delete(selector, single_remove, safe)
     local m = "\0\0\0\0" .. full_collection_name(self, self.col) 
                 .. num_to_le_uint(flags) .. selector
 
-    local id, sent = docmd(self.conn, "DELETE", m)
-    if sent == 0 then
+    local id, send = docmd(self.conn, "DELETE", m)
+    if not send then
+        return nil, "socket error"
+    end
+    
+    if send == 0 then
         return nil, "send message failed"   
     end
     
@@ -230,7 +246,13 @@ function colmethods:query(query, returnfields, numberToSkip, numberToReturn, opt
         .. query .. returnfields
 
     local req_id = docmd(self.conn, "QUERY", m)
-    return handle_reply(self.conn, req_id, numberToSkip)
+
+    local ok, cursorid, r, t = pcall(handle_reply, self.conn, req_id, numberToSkip)
+    if not ok then
+        return nil, nil, nil, "socket error"
+    end
+
+    return cursorid, r, t
 end
 
 function colmethods:getmore(cursorID, numberToReturn, offset_i)
@@ -238,7 +260,13 @@ function colmethods:getmore(cursorID, numberToReturn, offset_i)
                 .. num_to_le_int(numberToReturn or 0) .. cursorID
 
     local req_id = docmd(self.conn, "GET_MORE" , m)
-    return handle_reply(self.conn, req_id, offset_i)
+
+    local ok, cursorid, r, t = pcall(handle_reply, self.conn, req_id, offset_i)
+    if not ok then
+        return nil, nil, nil, "socket error"
+    end
+
+    return cursorid, r, t
 end
 
 function colmethods:count(query)
@@ -270,11 +298,30 @@ function colmethods:find(query, returnfields, num_each_query)
 end
 
 function colmethods:find_one(query, returnfields)
-    local id, results, t = self:query(query, returnfields, 0, 1)
-    if id == "\0\0\0\0\0\0\0\0" and results[1] then
-        return results[1]
+    local id, results, t, err = self:query(query, returnfields, 0, 1)
+    if not results then
+        return nil, err
     end
-    return nil
+    if id == "\0\0\0\0\0\0\0\0" and results[1] then
+        --[[ if results[1].code then
+            ngx.log(ngx.ERR, "find one err: ", results[1].code)
+        end ]]
+        return results[1]
+    else
+        return {}
+    end
+end
+
+-- see https://docs.mongodb.com/manual/reference/command/findAndModify
+function colmethods:find_and_modify(options)
+    assert(options.query)
+    assert(options.update or options.remove)
+    options.findAndModify = self.col
+    local doc, err = self.db_obj:cmd(attachpairs_start(options,"findAndModify"))
+    if not doc then
+        return nil,err
+    end
+    return doc.value
 end
 
 return colmt
